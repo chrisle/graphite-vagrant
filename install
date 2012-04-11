@@ -94,3 +94,7 @@ PYTHONPATH=\`pwd\`/whisper ./bin/run-graphite-devel-server.py --libs=\`pwd\`/web
 LOCALSETTINGS
 chmod +x /opt/graphite/webapp/graphite/local_settings.py
 
+# Copy some scripts
+cp /vagrant/start-collector /opt/graphite
+cp /vagrant/start-web-interface /opt/graphite
+chmod +x /opt/graphite*

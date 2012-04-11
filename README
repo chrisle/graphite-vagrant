@@ -1,0 +1,20 @@
+Quick start
+-----------
+
+$ vagrant up
+
+To run
+------
+
+$ sudo bash
+$ cd /opt/graphite
+
+Start the collector
+-------------------
+
+$ ./start-collector
+
+Start the web interface
+-----------------------
+
+$ ./start-web-interface
