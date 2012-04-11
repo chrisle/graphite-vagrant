@@ -1,0 +1,96 @@
+#!/bin/sh
+
+set -e ; export DEBIAN_FRONTEND=noninteractive; cd /vagrant
+
+# Install Python bzr
+apt-get -y update
+apt-get -y install bzr
+
+# Install graphite
+bzr branch lp:graphite
+
+# Install Whisper
+cd graphite/whisper
+python setup.py install
+
+# Install carbon
+cd ../carbon
+python setup.py install
+
+# Copy the sample configs
+cd /opt/graphite/conf
+cp carbon.conf.example carbon.conf
+cp storage-schemas.conf.example storage-schemas.conf
+
+# Check dependencies (should be missing 3)
+cd /vagrant/graphite
+python check-dependencies.py
+
+# Install missing dependencies
+apt-get -y install python-cairo \
+    python-django-tagging \
+    python-twisted \
+    python-memcache \
+    libapache2-mod-wsgi
+
+# Configure Apache
+cd /vagrant/graphite
+rm /etc/apache2/sites-enabled/000-default
+cat > /etc/apache2/sites-enabled/graphite <<APACHE
+WSGISocketPrefix /var/run/apache2/wsgi
+WSGIImportScript /opt/graphite/conf/graphite.wsgi process-group=graphite application-group=%{GLOBAL}
+<VirtualHost *:80>
+  ServerName graphite
+  DocumentRoot "/opt/graphite/webapp"
+  ErrorLog /opt/graphite/storage/log/webapp/error.log
+  CustomLog /opt/graphite/storage/log/webapp/access.log common
+
+  # I've found that an equal number of processes & threads tends
+  # to show the best performance for Graphite (ymmv).
+  WSGIDaemonProcess graphite processes=5 threads=5 display-name='%{GROUP}' inactivity-timeout=120
+  WSGIProcessGroup graphite
+  WSGIApplicationGroup %{GLOBAL}
+
+  WSGIScriptAlias / /opt/graphite/conf/graphite.wsgi
+
+  Alias /content/ /opt/graphite/webapp/content/
+  <Location "/content/">
+    SetHandler None
+  </Location>
+
+  Alias /media/ "/usr/share/pyshared/django/contrib/admin/media/"
+  <Location "/media/">
+    SetHandler None
+  </Location>
+
+  # The graphite.wsgi file has to be accessible by apache. It won't
+  # be visible to clients because of the DocumentRoot though.
+  <Directory /opt/graphite/conf/>
+    Order deny,allow
+    Allow from all
+  </Directory>
+</VirtualHost>
+APACHE
+cp -a conf/graphite.wsgi.example /opt/graphite/conf/graphite.wsgi
+
+# Restart Apache
+/etc/init.d/apache2 reload
+
+# Create Django database
+cd /opt/graphite/webapp/graphite
+python manage.py syncdb
+
+# Change owner of the storage to Apache's user
+chown -R www-data:www-data /opt/graphite/storage/
+
+# Enable debug in Graphite's local settings
+cp /opt/graphite/webapp/graphite/local_settings.py.example \
+     /opt/graphite/webapp/graphite/local_settings.py
+echo DEBUG = True >> /opt/graphite/webapp/graphite/local_settings.py.
+
+# Create a dev server script
+echo > /opt/graphite/webapp/graphite/local_settings.py <<LOCALSETTINGS
+PYTHONPATH=\`pwd\`/whisper ./bin/run-graphite-devel-server.py --libs=\`pwd\`/webapp/ /opt/graphite/
+LOCALSETTINGS
+chmod +x /opt/graphite/webapp/graphite/local_settings.py
+
